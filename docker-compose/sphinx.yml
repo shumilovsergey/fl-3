@@ -1,0 +1,21 @@
+version: '3'
+services:
+  sphinx:
+    image: registry.gitlab.com/bitrix-docker/images/sphinx:latest
+    container_name: bitrix-sphinx
+    restart: always
+    environment:
+      TZ: "${SERVER_TIMEZONE}"
+    volumes:
+      - ./../config/sphinx:/app/conf
+      - ./../data/sphinx/run:/app/run
+      - ./../data/sphinx/index:/app/index
+      - ./../data/sphinx/dicts:/app/dicts
+      - ./../data/sphinx/synonyms:/app/synonyms
+      - ./../logs/sphinx:/app/log
+    labels:
+      traefik.enable: false
+    depends_on:
+      - db
+    networks:
+      - bitrix

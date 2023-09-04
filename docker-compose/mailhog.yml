@@ -1,0 +1,28 @@
+version: '3'
+services:
+  mailhog:
+    image: mailhog/mailhog
+    container_name: bitrix-mailhog
+    restart: always
+    environment:
+      TZ: "${SERVER_TIMEZONE}"
+    logging:
+      driver: 'none'
+    labels:
+      traefik.enable: true
+
+      traefik.http.routers.mailhog-ssl.rule: Host(`mailhog.${MAIN_HOST}`) || Host(`www.mailhog.${MAIN_HOST}`)
+      traefik.http.routers.mailhog-ssl.entrypoints: https
+      traefik.http.routers.mailhog-ssl.tls: true
+      traefik.http.routers.mailhog-ssl.tls.certresolver: ${TRAEFIK_CERT_RESOLVER}
+      traefik.http.routers.mailhog-ssl.middlewares: ${TRAEFIK_SSL_MIDDLEWARES}
+      traefik.http.routers.mailhog-ssl.service: mailhog
+
+      traefik.http.routers.mailhog.rule: Host(`mailhog.${MAIN_HOST}`) || Host(`www.mailhog.${MAIN_HOST}`)
+      traefik.http.routers.mailhog.entrypoints: http
+      traefik.http.routers.mailhog.middlewares: ${TRAEFIK_MIDDLEWARES}
+      traefik.http.routers.mailhog.service: mailhog
+
+      traefik.http.services.mailhog.loadbalancer.server.port: 8025
+    networks:
+      - bitrix

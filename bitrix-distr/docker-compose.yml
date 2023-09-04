@@ -1,0 +1,86 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: nginx:latest
+    restart: on-failure
+    container_name: ${COMPOSE_PROJECT_NAME}-nginx
+    links:
+      - php-fpm:php
+    depends_on:
+      - php-fpm
+    labels:
+      - "traefik.enable=true"
+
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-ssl.rule=Host(`${PROJECT_HOST}`) || Host(`www.${PROJECT_HOST}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-ssl.entrypoints=https"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-ssl.tls=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-ssl.tls.certresolver=${PROJECT_CERT_RESOLVER}"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-ssl.middlewares=${PROJECT_SSL_MIDDLEWARES}"
+
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`${PROJECT_HOST}`) || Host(`www.${PROJECT_HOST}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=http"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.middlewares=${PROJECT_MIDDLEWARES}"
+
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
+    volumes:
+      - ./config/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./../../logs/sites/${PROJECT_DOMAIN}/nginx:/var/log/nginx
+      - &www-volume ./:/var/www:cached
+    networks:
+      - bitrix
+
+  php-fpm: &fpm-container
+    image: registry.gitlab.com/bitrix-docker/images/php-fpm-${PHP_VERSION}:latest
+#    build:
+#      context: ../../
+#      dockerfile: images/php-fpm-${PHP_VERSION}/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}-php-fpm
+    restart: on-failure
+    environment:
+      PHP_IDE_CONFIG: "serverName=Docker"
+      XDEBUG_SESSION: "docker-server"
+      # to skip bitrix server test
+      BITRIX_VA_VER: 7.5.0
+      TZ: "${SERVER_TIMEZONE}"
+      PHP_INI_SCAN_DIR: /usr/local/etc/php/conf.d/common/:/usr/local/etc/php/conf.d/:/usr/local/etc/php/conf.d/site/
+    env_file:
+      - .env
+    volumes:
+      - ./../../config/php-fpm/:/usr/local/etc/php/conf.d/common/:ro
+      - ./config/php-fpm/:/usr/local/etc/php/conf.d/site/:ro
+      - *www-volume
+      - &msmtp-volume ./../../config/msmtp/msmtprc:/etc/msmtprc:ro
+      - ./../../logs/sites/${PROJECT_DOMAIN}/php-fpm:/var/log
+    external_links:
+      - ${COMPOSE_PROJECT_NAME}-nginx:${PROJECT_HOST}
+#    extra_hosts:
+#      - "${PROJECT_HOST}:127.0.0.1"
+#      - "host.docker.internal:$DOCKER_HOST_IP"
+    networks:
+      - bitrix
+
+  cron:
+    <<: *fpm-container
+    restart: always
+    container_name: ${COMPOSE_PROJECT_NAME}-cron
+    env_file:
+      - .env
+    volumes:
+      - ./../../config/php-fpm/:/usr/local/etc/php/conf.d/common/:ro
+      - ./../../config/cron/cron_events.php:/var/www/www/bitrix/php_interface/cron_events.php:ro
+      - ./config/php-fpm/:/usr/local/etc/php/conf.d/site/:ro
+      - *www-volume
+      - *msmtp-volume
+      - ./../../logs/sites/${PROJECT_DOMAIN}/cron:/var/log
+      - ./crontab/:/etc/crontabs/
+    command: "crond -f"
+    depends_on:
+      - php-fpm
+    networks:
+      - bitrix
+
+networks:
+  bitrix:
+    external: true
+    name: bitrix-common_bitrix
